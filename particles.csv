@@ -1,0 +1,11 @@
+particle,mass
+electron,9.10938356e-31
+proton,1.6726219e-27
+neutron,1.6749275e-27
+alpha,6.644657e-27
+deuteron,3.343583719e-27
+muon,1.883531627e-28
+positron,9.10938356e-31
+photon,0
+neutrino,1e-36
+

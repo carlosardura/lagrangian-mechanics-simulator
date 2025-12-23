@@ -7,7 +7,7 @@ def main():
     r0 = np.array([1.0, 0.0])
     v0 = np.array([0.0, 1.0])
 
-    particle = Particle(
+    p = Particle(
         name = p_data["name"],
         mass = p_data["mass"],
         position = r0,
@@ -97,15 +97,55 @@ def run_simulation():
     """
     pass
 
+def energies_over_time(p, pos_array, vel_array):
+    """
+    Takes the position and velocity arrays after using numerical methods 
+    and calculates the energy at each point in the given time interval.
+    """
+    n = len(pos_array)
+    T = np.zeros(n)
+    V = np.zeros(n)
+    E = np.zeros(n)
+
+    for i in range(n):
+        p.position = pos_array[i]
+        p.velocity = vel_array[i]
+        T[i] = p.kinetic_energy()
+        V[i] = p.potential_energy()
+        E[i] = p.total_energy()
+
+    return T, V, E
+
 class Particle:
     """
     Represents a particle in 2D space with several physical properties.
     """
-    def __init__(self, name, mass, position=None, velocity=None):
+    def __init__(self, name, mass, potential, position=None, velocity=None):
         self.name = name
         self.mass = mass
+        self.potential = potential
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
+
+    def kinetic_energy(self):
+        """
+        Returns kinetic energy (T) given particle's velocity.
+        """
+        v = self.velocity
+        return 0.5 * self.mass * np.dot(v, v)
+    
+    def potential_energy(self):
+        """
+        Returns potential energy (V) in the particle's position.
+        """
+        return self.potential(self.position)
+    
+    def total_energy(self):
+        """
+        Total energy: T + V
+        """
+        return self.kinetic_energy() + self.potential_energy()
+
 
 if __name__ == "__main__":
     main()

@@ -2,14 +2,33 @@ import numpy as np
 import csv
 
 def main():
-    particle = input("Select a particle: ")
+    p_name = input("Select a particle: ").strip().lower()
+    p_data = select_particle(p_name)
+    r0 = np.array([1.0, 0.0])
+    v0 = np.array([0.0, 1.0])
 
-def select_particle(particle):
+    particle = Particle(
+        name = p_data["name"],
+        mass = p_data["mass"],
+        position = r0,
+        velocity = v0,
+    )
+
+def select_particle(p_name):
     """
     Reads "particles.csv" and allows the user to select a particle.
     Returns a dictionary with the mass of the selected particle.
     """
-    pass
+    with open("particles.csv", "r") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            if row["name"] == p_name:
+                return {
+                    "name": row["name"],
+                    "mass": float(row["mass"]),
+                }
+            else:
+                raise ValueError("Particle not found")
     
 def select_potential():
     """
@@ -85,8 +104,8 @@ class Particle:
     def __init__(self, name, mass, position=None, velocity=None):
         self.name = name
         self.mass = mass
-        self.position = [0.0, 0.0]
-        self.velocity = [0.0, 0.0]
+        self.position = np.array(position, dtype=float)
+        self.velocity = np.array(velocity, dtype=float)
 
 if __name__ == "__main__":
     main()

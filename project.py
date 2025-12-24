@@ -1,38 +1,34 @@
 import numpy as np
+import sympy as sp
 from integrators import eulode_phys, rk4sys_phys, velverlet_phys
 import csv
 
 # ---------- classes and functions ----------
 
+t = sp.symbols('t')
+x = sp.Function('x')(t)
+y = sp.Function('y')(t)
+vx = sp.diff(x, t)
+vy = sp.diff(y, t)
+ax = sp.diff(x, t, 2)
+ay = sp.diff(y, t, 2)
+
 class Particle:
     """
-    Represents a particle in 2D space with several physical properties.
+    Represents a particle in 2D space with several physical properties,
+    including position, velocity and acceleration arrays, and symbolic
+    energy functions.
     """
-    def __init__(self, name, mass, potential, position=None, velocity=None):
+    def __init__(self, name, mass, V_sym, position=None, velocity=None):
         self.name = name
         self.mass = mass
-        self.potential = potential
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
 
-    def kinetic_energy(self):
-        """
-        Returns kinetic energy (T) given particle's velocity.
-        """
-        v = self.velocity
-        return 0.5 * self.mass * np.dot(v, v)
-    
-    def potential_energy(self):
-        """
-        Returns potential energy (V) in the particle's position.
-        """
-        return self.potential(self.position)
-    
-    def total_energy(self):
-        """
-        Total energy: T + V
-        """
-        return self.kinetic_energy() + self.potential_energy()
+        self.T_sym = 0.5 * self.mass * (vx**2 + vy**2)
+        self.V_sym = V_sym
+
+        self.acceleration = euler_lagrange_equations(self)
 
 
 def select_particle(p_name):
@@ -50,44 +46,41 @@ def select_particle(p_name):
                 }
             else:
                 raise ValueError("Particle not found")
-    
+
 
 def select_potential():
     """
     Allows the user to select a potential function for the simulation.
-    Returns a callable potential, with k, G and M equal to 1 for simplicity.
+    Returns a symbolic potential, with k, G and M equal to 1 for simplicity.
     """
-    def V_harmonic(position, k=1.0):
+    def V_harmonic(k=1.0):
         """
         2D simple harmonic oscillator.
         k: spring constant
         """
-        x, y = position
         return 0.5 * k * (x**2 + y**2)
-    
-    def V_anisotropic(position, kx=1.0, ky=2.0):
+
+    def V_anisotropic(kx=1.0, ky=2.0):
         """
         2D anisotropic harmonic oscillator.
         kx, ky: spring constants in x and y
         """
-        x, y = position
         return 0.5 * (kx * x ** 2 + ky * y ** 2)
     
-    def V_kepler(position, G=1.0, M=1.0, epsilon=1e-6):
+    def V_kepler(G=1.0, M=1.0, epsilon=1e-6):
         """
         Keplerian potential avoiding singularity in r=0.
         G: gravitational constant
         M: central mass
         """
-        r = np.sqrt(np.dot(position, position) + epsilon**2)
+        r = sp.sqrt(x**2 + y**2 + epsilon**2)
         return -G * M / r
     
-    def V_noncentral(position, alpha=1.0):
+    def V_noncentral(alpha=1.0):
         """
         Simple noncentral potential.
         alpha: coupling constant
         """
-        x, y = position
         return alpha * x * y
     
     potentials = {
@@ -100,7 +93,7 @@ def select_potential():
     print("Available potentials:")
     for name in potentials:
         print(name)
-        
+
     while True:
         index = input("Select a potential (1-4): ").lstrip()
         if not index:
@@ -134,40 +127,58 @@ def run_simulation(particle, tspan, h):
     return results
 
 
-def energies_over_time(p, pos_array, vel_array):
+def euler_lagrange_equations(self):
     """
-    Takes the position and velocity arrays after using numerical methods 
-    and calculates the energy at each point in the given time interval.
+    Calculates a symbolic lagrangian expression (L=T-V), then calculates the 
+    Euler-Lagrange equations for each coordinate and returns the acceleracion 
+    array as numeric expressions.
     """
+    L_sym = self.T_sym - self.V_sym
+
+    ELx = sp.diff(sp.diff(L_sym, vx), t) - sp.diff(L_sym, x)
+    ELy = sp.diff(sp.diff(L_sym, vy), t) - sp.diff(L_sym, y)
+    
+    acc_x = sp.lambdify((x, y, vx, vy), sp.solve(ELx, ax)[0], "numpy")
+    acc_y = sp.lambdify((x, y, vx, vy), sp.solve(ELy, ay)[0], "numpy")
+
+    return np.array([acc_x, acc_y])
+
+
+def energies_over_time(particle, pos_array, vel_array):
+    """
+    Turns the symbolic energy functions into numeric expressions, then takes 
+    the position and velocity arrays obtained after using the integrators
+    and returns the different energies at each point in the given time interval.
+    """
+    T = sp.lambdify((vx, vy), particle.T_sym, "numpy")
+    V = sp.lambdify((x, y), particle.V_sym, "numpy")
     n = len(pos_array)
-    T = np.zeros(n)
-    V = np.zeros(n)
-    E = np.zeros(n)
 
-    for i in range(n):
-        p.position = pos_array[i]
-        p.velocity = vel_array[i]
-        T[i] = p.kinetic_energy()
-        V[i] = p.potential_energy()
-        E[i] = p.total_energy()
+    T_array = np.zeros(n)
+    V_array = np.zeros(n)
+    E_array = np.zeros(n)
 
-    return T, V, E
+    T_array = T(vel_array[:,0], vel_array[:,1])
+    V_array = V(pos_array[:,0], pos_array[:,1])
+    E_array = T_array + V_array
+
+    return T_array, V_array, E_array
 
 # ---------- main function ----------
 
 def main():
     p_name = input("Select a particle: ").strip().lower()
     p_data = select_particle(p_name)
-    potential = select_potential()
-
+    V_sym = select_potential()()
 
     p = Particle(
         name = p_data["name"],
         mass = p_data["mass"],
-        potential = potential,
         position = 0,
         velocity = 0,
+        V_sym = V_sym,
     )
+
 
 if __name__ == "__main__":
     main()

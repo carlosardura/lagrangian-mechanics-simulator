@@ -1,6 +1,7 @@
 import numpy as np
 import sympy as sp
 from integrators import eulode_phys, rk4sys_phys, velverlet_phys
+import matplotlib.pyplot as plt
 import csv
 import sys
 
@@ -20,42 +21,42 @@ class Particle:
     def __init__(self, name, mass, V_sym, position=None, velocity=None):
         self.name = name
         self.mass = mass
+        self.T_sym = 0.5 * self.mass *(sp.diff(x,t)**2 + sp.diff(y,t)**2)
+        self.V_sym = V_sym
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
-
-        self.T_sym = 0.5 * self.mass * (vx**2 + vy**2)
-        self.V_sym = V_sym
-
         self.acceleration = euler_lagrange_equations(self)
 
 
-def select_particle(p_name):
+def select_particle():
     """
     Reads "particles.csv" and allows the user to select a particle.
     Returns a dictionary with the mass of the selected particle.
     """
     with open("particles.csv", "r") as file:
         reader = csv.DictReader(file)
-        for row in reader:
-            if row["name"] == p_name:
-                return {
-                    "name": row["name"],
-                    "mass": float(row["mass"]),
-                }
-            else:
-                raise ValueError("Particle not found")
+        particles = list(reader) 
+
+    while True:
+        name = input("Select a particle: ").strip().lower()
+        for row in particles:
+            if row["particle"] == name:
+                return row["particle"], float(row["mass"])
+        print("Particle not found.")
 
 
-def select_potential(k=1.0, kx=1.0, ky=2.0, G=1.0, M=1.0, epsilon=1e-6, alpha=1.0):
+def select_potential(k=1e-29, kx=1e-29, ky=2e-29, G=1e-11, M=1.0, epsilon=1e-6, alpha=1e-29):
     """
     Allows the user to select a potential function for the simulation.
-    Returns a symbolic potential, with k, G and M equal to 1 for simplicity.
+    Returns a symbolic potential, with small values assigned to the constant coefficientes
+    to keep accelerations within a numerically stable range for all particles.
     """
     potentials = {
         "1. Simple Harmonic Oscillator": 0.5 * k * (x**2 + y**2),
-        "2. Anisotropic Harmonic Oscillator": 0.5 * (kx * x ** 2 + ky * y ** 2),
+        "2. Anisotropic Harmonic Oscillator": 0.5 * (kx * x**2 + ky * y**2),
         "3. Keplerian": -G * M / sp.sqrt(x**2 + y**2 + epsilon**2),
-        "4. Noncentral": alpha * x * y,
+        "4. Noncentral": alpha * x**2 * y,
+        "5. Free particle": 0,
     }
 
     print("Available potentials:")
@@ -63,53 +64,14 @@ def select_potential(k=1.0, kx=1.0, ky=2.0, G=1.0, M=1.0, epsilon=1e-6, alpha=1.
         print(name)
 
     while True:
-        index = input("Select a potential (1-4): ").lstrip()
-        if not index:
+        index = input("Select a potential (1-5): ").lstrip()
+        if not index or len(index) > 1:
             print("Invalid selection. Try again.")
             continue
         for name, func in potentials.items():
             if index[0] == name[0]:
                 return func
         print("Invalid selection. Try again.")
-
-
-def run_simulation(particle, tspan, h):
-    """
-    Given several integrators, simulates the particle's motion over time
-    and each energy inside a time interval. Returns (len(tp), dim) arrays.
-    """
-    tp_e, pos_e, vel_e = eulode_phys(particle.acceleration, tspan, particle.position, particle.velocity, h)
-    tp_rk, pos_rk, vel_rk = rk4sys_phys(particle.acceleration, tspan, particle.position, particle.velocity, h)
-    tp_vv, pos_vv, vel_vv = velverlet_phys(particle.acceleration, tspan, particle.position, particle.velocity, h)
-
-    T_e, V_e, E_e = energies_over_time(particle, pos_e, vel_e)
-    T_rk, V_rk, E_rk = energies_over_time(particle, pos_rk, vel_rk)
-    T_vv, V_vv, E_vv = energies_over_time(particle, pos_vv, vel_vv)
-
-    results = {
-        "Euler-Cromer":    {"t": tp_e, "pos": pos_e, "vel": vel_e, "T": T_e, "V": V_e, "E": E_e},
-        "RK4":             {"t": tp_rk, "pos": pos_rk, "vel": vel_rk, "T": T_rk, "V": V_rk, "E": E_rk},
-        "Velocity-Verlet": {"t": tp_vv, "pos": pos_vv, "vel": vel_vv, "T": T_vv, "V": V_vv, "E": E_vv},
-    }
-
-    return results
-
-
-def euler_lagrange_equations(self):
-    """
-    Calculates a symbolic lagrangian expression (L=T-V), then calculates the 
-    Euler-Lagrange equations for each coordinate and returns the acceleracion 
-    array as numeric expressions.
-    """
-    L_sym = self.T_sym - self.V_sym
-
-    ELx = sp.diff(sp.diff(L_sym, vx), t) - sp.diff(L_sym, x)
-    ELy = sp.diff(sp.diff(L_sym, vy), t) - sp.diff(L_sym, y)
-    
-    acc_x = sp.lambdify((x, y, vx, vy), sp.solve(ELx, ax)[0], "numpy")
-    acc_y = sp.lambdify((x, y, vx, vy), sp.solve(ELy, ay)[0], "numpy")
-
-    return np.array([acc_x, acc_y])
 
 
 def energies_over_time(particle, pos_array, vel_array):
@@ -132,6 +94,132 @@ def energies_over_time(particle, pos_array, vel_array):
 
     return T_array, V_array, E_array
 
+
+def euler_lagrange_equations(self):
+    """
+    Calculates a symbolic lagrangian expression (L=T-V), then calculates the 
+    Euler-Lagrange equations for each coordinate and returns the acceleracion 
+    array as numeric expressions.
+    """
+    L_sym = self.T_sym - self.V_sym
+
+    ELx = sp.diff(sp.diff(L_sym, sp.diff(x,t)), t) - sp.diff(L_sym, x)
+    ELy = sp.diff(sp.diff(L_sym, sp.diff(y,t)), t) - sp.diff(L_sym, y)
+
+    acc_x = sp.solve(ELx, ax)[0]
+    acc_y = sp.solve(ELy, ay)[0]
+    acc = sp.lambdify((x, y, vx, vy), [acc_x, acc_y], "numpy")
+    def acceleration(pos, vel):
+        return np.array(acc(pos[0], pos[1], vel[0], vel[1]), dtype=float)
+
+    return acceleration
+
+
+def run_simulation(particle, tspan, h):
+    """
+    Given several integrators, simulates the particle's motion over time
+    and each energy inside a time interval. Returns (len(tp), dim) arrays.
+    """
+    tp_e, pos_e, vel_e = eulode_phys(particle.acceleration, tspan, particle.position, particle.velocity, h)
+    tp_rk, pos_rk, vel_rk = rk4sys_phys(particle.acceleration, tspan, particle.position, particle.velocity, h)
+    tp_vv, pos_vv, vel_vv = velverlet_phys(particle.acceleration, tspan, particle.position, particle.velocity, h)
+
+    T_e, V_e, E_e = energies_over_time(particle, pos_e, vel_e)
+    T_rk, V_rk, E_rk = energies_over_time(particle, pos_rk, vel_rk)
+    T_vv, V_vv, E_vv = energies_over_time(particle, pos_vv, vel_vv)
+    
+    px_e, py_e = particle.mass * vel_e[:,0], particle.mass * vel_e[:,1]
+    px_rk, py_rk = particle.mass * vel_rk[:,0], particle.mass * vel_rk[:,1]
+    px_vv, py_vv = particle.mass * vel_vv[:,0], particle.mass * vel_vv[:,1]
+
+    L_e = particle.mass * (pos_e[:,0]*vel_e[:,1] - pos_e[:,1]*vel_e[:,0])
+    L_rk = particle.mass * (pos_rk[:,0]*vel_rk[:,1] - pos_rk[:,1]*vel_rk[:,0])
+    L_vv = particle.mass * (pos_vv[:,0]*vel_vv[:,1] - pos_vv[:,1]*vel_vv[:,0])
+
+    results = {
+        "Euler-Cromer":    {"t": tp_e, "pos": pos_e, "vel": vel_e, "T(t)": T_e,  
+                            "V(t)": V_e,  "E(t)": E_e, "px": px_e, "py": py_e, "L": L_e},
+        "Runge-Kutta 4":   {"t": tp_rk, "pos": pos_rk, "vel": vel_rk, "T(t)": T_rk,
+                            "V(t)": V_rk, "E(t)": E_rk, "px": px_rk, "py": py_rk, "L": L_rk},
+        "Velocity Verlet": {"t": tp_vv, "pos": pos_vv, "vel": vel_vv, "T(t)": T_vv,
+                            "V(t)": V_vv, "E(t)": E_vv, "px": px_vv, "py": py_vv, "L": L_vv}
+    }
+
+    return results
+
+
+def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel):
+    """
+    Generates a generic 2x2 plot template to compare the results obtained from the 
+    different numerical integration methods.
+    """
+    methods = list(dict.keys())
+    colors = ["#FFD000", "#FF0000", "#222ED5",
+              "#AB8901", "#9B0000", "#00058F",
+              "#FFE375", "#FF7A7A", "#2380F9",
+              "#F76700", "#15A215", "#6F2885"]
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+    axs = axs.flatten()
+
+    try:
+        iter(xdata)
+    except TypeError:
+        xdata = [xdata]
+    
+    try:
+        iter(ydata)
+    except TypeError:
+        ydata = [ydata]
+    
+    for i, method in enumerate(methods):
+        if len(ydata) == 1:
+            x = dict[method][xdata[0]]
+            y = dict[method][ydata[0]]
+            if x.ndim != 1: x = x[:, xcol]
+            if y.ndim != 1: y = y[:, ycol]
+            axs[i].plot(x, y, color=colors[i])
+        else: 
+            for j, (xkey, ykey) in enumerate(zip(xdata, ydata)):
+                x = dict[method][xkey]
+                y = dict[method][ykey]
+                xj = xcol[j] if len(xcol) > 1 else xcol
+                yj = ycol[j] if len(ycol) > 1 else ycol
+                if x.ndim > 1: x = x[:, xj]
+                if y.ndim > 1: y = y[:, yj]
+                axs[i].plot(x, y, color=colors[3 * j + i], label=ykey)
+        
+        axs[i].set_xlabel(xlabel)
+        axs[i].set_ylabel(ylabel)
+        axs[i].set_title(method)
+        axs[i].grid(True)
+        if len(ydata) > 1:
+            axs[i].legend()
+
+    axs[3].set_title("Error")
+    axs[3].grid(True)
+    t = dict[methods[0]]["t"]
+
+    for i in range(len(methods)):
+        for j in range(i+1, len(methods)):
+            method1 = dict[methods[i]][ydata[0]]
+            method2 = dict[methods[j]][ydata[0]]
+
+            if method1.ndim != 1:
+                method1 = method1[:, ycol]
+            if method2.ndim != 1:
+                method2 = method2[:, ycol]
+
+            err = np.abs(method1 - method2)
+            axs[3].plot(t, err, color=colors[i + j + 8], label=f"{methods[i]} vs {methods[j]}")
+
+    axs[3].set_xlabel("t")
+    axs[3].set_ylabel("Error")
+    axs[3].legend()
+
+    fig.suptitle(title, fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
 # ---------- main function ----------
 
 def main():
@@ -143,33 +231,56 @@ def main():
         t0 = float(sys.argv[2])
         tf = float(sys.argv[3])
     else:
-        sys.exit("Introduce python project.py h tf or python project.py h t0 tf")
+        sys.exit("Introduce 'python project.py h tf' or 'python project.py h t0 tf'")
     tspan = (t0, tf)
 
-    p_name = input("Select a particle: ").strip().lower()
-    p_data = select_particle(p_name)
-
+    p_name, p_mass = select_particle()
     V_sym = select_potential()
 
-    try:
-        r0 = list(map(float, input("Introduce r0: ").replace(" ", "").split(",")))
-        v0 = list(map(float, input("Introduce v0: ").replace(" ", "").split(",")))
-    except ValueError:
-        sys.exit("Invalid format.")
-    
-    if len(r0) != 2 or len(v0) != 2:
-        sys.exit("Introduce exactly two values for position and velocity.")
+    while True:
+        try:
+            r0 = input("Introduce r0 [x0, y0]: ")
+            r0 = r0.replace(" ", "").replace("[", "").replace("]", "")
+            r0 = list(map(float, r0.split(",")))
+            if len(r0) != 2:
+                print("Introduce exactly two values.")
+                continue
+            break
+        except ValueError:
+            print("Invalid format.")
+            continue
 
+    while True:
+        try:
+            v0 = input("Introduce v0 [vx0, vy0]: ")
+            v0 = v0.replace(" ", "").replace("[", "").replace("]", "")
+            v0 = list(map(float, v0.split(",")))
+            if len(v0) != 2:
+                print("Introduce exactly two values.")
+                continue
+            break
+        except ValueError:
+            print("Invalid format.")
+            continue
+       
     p = Particle(
-        name = p_data["name"],
-        mass = p_data["mass"],
+        name = p_name,
+        mass = p_mass,
+        V_sym = V_sym,
         position = r0,
         velocity = v0,
-        V_sym = V_sym,
     )
 
     results = run_simulation(p, tspan, h)
+    
+    titles = ["Orbit y(x)", "Energies over time", "Phase-space", "Angular momentum over time"]
+    Exdata, Eydata = ["t", "t", "t"], ["E(t)", "V(t)", "T(t)"]
+    pxdata, pydata, pxcol, pycol = ["pos", "pos"], ["px", "py"], [0, 1], [0, 1] 
 
+    graphs(results, titles[0], ["pos"], ["pos"], [0], [1], "x", "y(x)")
+    graphs(results, titles[1], Exdata, Eydata, [0], [0], "t", "Energies")
+    graphs(results, titles[2], pxdata, pydata, pxcol, pycol, "x, y", "px, py")
+    graphs(results, titles[3], ["t"], ["L"], [0], [0], "t", "L(t)")
 
 if __name__ == "__main__":
     main()

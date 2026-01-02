@@ -27,6 +27,7 @@ class Particle:
         self.velocity = np.array(velocity, dtype=float)
         self.acceleration, self.conserved = euler_lagrange_equations(self)
 
+
 def select_particle():
     """
     Reads "particles.csv" and allows the user to select a particle.
@@ -44,16 +45,16 @@ def select_particle():
         print("Particle not found.")
 
 
-def select_potential(k=1e-29, kx=1e-29, ky=2e-29, G=1e-11, M=1.0, epsilon=1e-6, alpha=1e-29):
+def select_potential(k=1.0, kx=0.5, ky=2.0, GM=1.0, epsilon=1e-6, alpha=1.0):
     """
     Allows the user to select a potential function for the simulation.
-    Returns a symbolic potential, with small values assigned to the constant coefficientes
-    to keep accelerations within a numerically stable range for all particles.
+    Returns a symbolic potential, with normalized coefficientes to keep
+    accelerations within a numerically stable range for all particles.
     """
     potentials = {
         "1. Simple Harmonic Oscillator": 0.5 * k * (x**2 + y**2),
         "2. Anisotropic Harmonic Oscillator": 0.5 * (kx * x**2 + ky * y**2),
-        "3. Keplerian": -G * M / sp.sqrt(x**2 + y**2 + epsilon**2),
+        "3. Keplerian": -GM / sp.sqrt(x**2 + y**2 + epsilon**2),
         "4. Noncentral": alpha * x * y,
         "5. Free particle": 0,
     }
@@ -87,8 +88,8 @@ def energies_over_time(particle, pos_array, vel_array):
     V_array = np.zeros(n)
     E_array = np.zeros(n)
 
-    T_array = T(vel_array[:,0], vel_array[:,1])
-    V_array = V(pos_array[:,0], pos_array[:,1])
+    T_array = np.array(T(vel_array[:,0], vel_array[:,1])) * np.ones(n)
+    V_array = np.array(V(pos_array[:,0], pos_array[:,1])) * np.ones(n)
     E_array = T_array + V_array
 
     return T_array, V_array, E_array
@@ -217,18 +218,17 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
         if len(ydata) > 1:
             axs[i].legend()
 
-
     t = dict[methods[0]]["t"]
 
     if conserved:
-        axs[3].set_title(f"Conservation error in {ydata[0]}")
+        axs[3].set_title(f"Relative conservation error in {ydata[0]}")
         for k, method in enumerate(methods):
             y = dict[method][ydata[0]]
             if y.ndim > 1: y = y[:, ycol[0]]
-            err = y - y[0]
+            err = (y - y[0]) / max(abs(y[0]), 1e-12)
             axs[3].plot(t, err, color=colors[k], label={method})
     else:
-        axs[3].set_title(f"Method-to-method deviation")
+        axs[3].set_title(f"Absolute method-to-method deviation")
         for i in range(len(methods)):
            for j in range(i+1, len(methods)):
                 method1 = dict[methods[i]][ydata[0]]
@@ -293,17 +293,20 @@ def main():
             print("Invalid format.")
             continue
 
+    # Scale factor used to normalize initial position and velocity
+    # to a safe numerical range, preventing overflow.
+    scale_factor = max(np.linalg.norm(r0), np.linalg.norm(v0), 1e-6)
+
     p = Particle(
         name = p_name,
-        mass = p_mass,
+        mass = p_mass/9.1093837139e-31,
         V_sym = V_sym,
-        position = r0,
-        velocity = v0,
-    )
+        position = r0/scale_factor,
+        velocity = v0/scale_factor,
+    )  
 
     results = run_simulation(p, tspan, h)
     quantities = p.conserved()
-    
     titles = ["Trajectory y(x)", "Energies over time", "Phase-space", "Angular momentum over time"]
     Exdata, Eydata = ["t", "t", "t"], ["E", "V", "T"]
     p_xdata, p_ydata, p_xcol, p_ycol = ["pos", "pos"], ["px", "py"], [0, 1], [0, 1] 

@@ -25,6 +25,7 @@ class Particle:
         self.V_sym = V_sym
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
+        
         self.acceleration, self.conserved = euler_lagrange_equations(self)
 
 
@@ -36,26 +37,32 @@ def select_particle():
     with open("particles.csv", "r") as file:
         reader = csv.DictReader(file)
         particles = list(reader) 
-
+    
+    min_mass = float(particles[0]["mass"])
+    for row in particles:
+        mass = float(row["mass"])
+        if mass < min_mass:
+            min_mass = mass
+    
     while True:
         name = input("Select a particle: ").strip().lower()
         for row in particles:
             if row["particle"] == name:
-                return row["particle"], float(row["mass"])
+                return row["particle"], float(row["mass"]), min_mass
         print("Particle not found.")
 
 
-def select_potential(k=1.0, kx=0.5, ky=2.0, GM=1.0, epsilon=1e-6, alpha=1.0):
+def select_potential(k=1.0, kx=0.5, ky=2.0, alpha=1.0, GM=1.0, epsilon=1e-6):
     """
     Allows the user to select a potential function for the simulation.
     Returns a symbolic potential, with normalized coefficientes to keep
-    accelerations within a numerically stable range for all particles.
+    accelerations within a numerically stable range for all inputs.
     """
     potentials = {
         "1. Simple Harmonic Oscillator": 0.5 * k * (x**2 + y**2),
         "2. Anisotropic Harmonic Oscillator": 0.5 * (kx * x**2 + ky * y**2),
-        "3. Keplerian": -GM / sp.sqrt(x**2 + y**2 + epsilon**2),
-        "4. Noncentral": alpha * x * y,
+        "3. Coupled Harmonic Oscillator": alpha * (x**2 + y**2 + x*y),
+        "4. Keplerian": -GM / sp.sqrt(x**2 + y**2 + epsilon**2),
         "5. Free particle": 0,
     }
 
@@ -160,7 +167,6 @@ def run_simulation(particle, tspan, h):
         "Velocity Verlet": {"t": tp_vv, "pos": pos_vv, "vel": vel_vv, "T": T_vv,
                             "V": V_vv, "E": E_vv, "px": px_vv, "py": py_vv, "Lz": L_vv}
     }
-
     return results
 
 
@@ -226,7 +232,7 @@ def graphs(dict, title, xdata, ydata, xcol, ycol, xlabel, ylabel, conserved):
             y = dict[method][ydata[0]]
             if y.ndim > 1: y = y[:, ycol[0]]
             err = (y - y[0]) / max(abs(y[0]), 1e-12)
-            axs[3].plot(t, err, color=colors[k], label={method})
+            axs[3].plot(t, err, color=colors[k], label=method)
     else:
         axs[3].set_title(f"Absolute method-to-method deviation")
         for i in range(len(methods)):
@@ -264,14 +270,14 @@ def main():
         sys.exit("Introduce 'python project.py h tf' or 'python project.py h t0 tf'")
     tspan = (t0, tf)
     
-    p_name, p_mass = select_particle()
+    p_name, p_mass, min_mass = select_particle()
     V_sym = select_potential()
 
     while True:
         try:
             r0 = input("Introduce r0 [x0, y0]: ")
             r0 = r0.replace(" ", "").replace("[", "").replace("]", "")
-            r0 = list(map(float, r0.split(",")))
+            r0 = np.array(list(map(float, r0.split(","))), dtype = float)
             if len(r0) != 2:
                 print("Introduce exactly two values.")
                 continue
@@ -284,7 +290,7 @@ def main():
         try:
             v0 = input("Introduce v0 [vx0, vy0]: ")
             v0 = v0.replace(" ", "").replace("[", "").replace("]", "")
-            v0 = list(map(float, v0.split(",")))
+            v0 = np.array(list(map(float, v0.split(","))), dtype = float)
             if len(v0) != 2:
                 print("Introduce exactly two values.")
                 continue
@@ -299,7 +305,7 @@ def main():
 
     p = Particle(
         name = p_name,
-        mass = p_mass/9.1093837139e-31,
+        mass = p_mass/min_mass,
         V_sym = V_sym,
         position = r0/scale_factor,
         velocity = v0/scale_factor,
